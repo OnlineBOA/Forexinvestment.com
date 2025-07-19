@@ -1,0 +1,239 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dashboard - KingC</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      --text: white;
+      --card: rgba(255,255,255,0.1);
+    }
+    body.light-mode {
+      --bg: white;
+      --text: #111;
+      --card: #f0f0f0;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 20px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    h2, h3 { margin: 0; }
+    .plans {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .plan-card {
+      background: var(--card);
+      padding: 20px;
+      border-radius: 15px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .plan-card:hover {
+      transform: scale(1.05);
+      background: rgba(255,255,255,0.2);
+    }
+    .balance-card {
+      background: var(--card);
+      padding: 10px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    #withdraw-log, #investment-details {
+      margin-top: 20px;
+      background: rgba(255,255,255,0.05);
+      padding: 15px;
+      border-radius: 10px;
+    }
+    button {
+      background: white;
+      color: #0f2027;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+    .theme-toggle {
+      font-size: 20px;
+      cursor: pointer;
+      margin-left: 10px;
+    }
+    canvas {
+      background: white;
+      border-radius: 10px;
+      margin-top: 20px;
+      width: 100%;
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h3>Welcome, <span id="username">User</span></h3>
+    </div>
+    <div>
+      <button onclick="setCurrency('BTC')">BTC</button>
+      <span class="theme-toggle" onclick="toggleTheme()">🌓</span>
+    </div>
+  </header>  <div class="balance-card">
+    <span><strong>BTC Balance:</strong> <span id="btc-balance">₿0</span></span>
+    <span><strong>≈ USD:</strong> <span id="btc-usd">$0</span></span>
+  </div>  <div id="investment-details"></div>  <h2>Bitcoin Plans</h2>
+  <div class="plans" id="btc-plans">
+    <div class="plan-card" onclick="selectPlan(0.01, 'BTC')"><h3>₿0.01</h3><p>Get ₿0.02 in 3 days</p></div>
+    <div class="plan-card" onclick="selectPlan(0.05, 'BTC')"><h3>₿0.05</h3><p>Get ₿0.1 in 3 days</p></div>
+    <div class="plan-card" onclick="selectPlan(0.1, 'BTC')"><h3>₿0.1</h3><p>Get ₿0.2 in 3 days</p></div>
+    <div class="plan-card" onclick="selectPlan(0.5, 'BTC')"><h3>₿0.5</h3><p>Get ₿1.0 in 3 days</p></div>
+    <div class="plan-card" onclick="selectPlan(1, 'BTC')"><h3>💎 ₿1</h3><p>Get ₿2.5 in 3 days</p></div>
+  </div><canvas id="btcChart" height="150"></canvas>
+
+  <footer>
+    <button onclick="withdraw()">Withdraw Investment</button>
+    <div id="withdraw-log"></div>
+  </footer>  <script>
+    let chart;
+    async function fetchBTCPrice() {
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+      const data = await res.json();
+      return data.bitcoin.usd;
+    }
+
+    async function updateChart() {
+      const res = await fetch('https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=0.0007');
+      const data = await res.json();
+      const labels = data.prices.map(p => new Date(p[0]).toLocaleTimeString());
+      const values = data.prices.map(p => p[1]);
+
+      if (chart) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = values;
+        chart.update();
+      } else {
+        chart = new Chart(document.getElementById("btcChart"), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'BTC/USD Live (1s)',
+              data: values,
+              borderColor: 'gold',
+              backgroundColor: 'rgba(255,215,0,0.1)',
+              fill: true,
+              tension: 0.3
+            }]
+          },
+          options: {
+            animation: false,
+            responsive: true,
+            scales: {
+              x: { display: false },
+              y: {
+                ticks: {
+                  callback: val => '$' + val.toLocaleString()
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+
+    let userRaw = localStorage.getItem("kingc_user");
+    let user = userRaw ? JSON.parse(userRaw) : null;
+    if (!user) {
+      alert("User not found. Redirecting to login.");
+      window.location.href = "login.html";
+    }
+
+    if (!user.balances) user.balances = { BTC: 0 };
+    if (!user.investments) user.investments = [];
+    if (!user.withdrawals) user.withdrawals = [];
+
+    document.getElementById("username").textContent = user.name || "User";
+
+    function toggleTheme() {
+      document.body.classList.toggle("light-mode");
+    }
+
+    function setCurrency() {
+      localStorage.setItem("kingc_currency", 'BTC');
+    }
+
+    function renderBalances(price) {
+      document.getElementById("btc-balance").textContent = `₿${user.balances.BTC}`;
+      const usd = user.balances.BTC * price;
+      document.getElementById("btc-usd").textContent = new Intl.NumberFormat(navigator.language, { style: 'currency', currency: 'USD' }).format(usd);
+    }
+
+    function selectPlan(amount, currency) {
+      user.investments.push({ amount, currency, timestamp: Date.now() });
+      localStorage.setItem("kingc_user", JSON.stringify(user));
+      window.location.href = "deposit.html";
+    }
+
+    function withdraw() {
+      window.location.href = "withdraw.html";
+    }
+
+    (async () => {
+      const price = await fetchBTCPrice();
+      const now = Date.now();
+
+      user.investments.forEach(inv => {
+        const elapsed = now - inv.timestamp;
+        const matured = elapsed >= 3 * 24 * 60 * 60 * 1000;
+        if (!inv.initialAdded) {
+          user.balances[inv.currency] += inv.amount;
+          inv.initialAdded = true;
+        }
+        if (matured && !inv.credited) {
+          user.balances[inv.currency] += inv.amount;
+          inv.credited = true;
+        }
+      });
+
+      localStorage.setItem("kingc_user", JSON.stringify(user));
+      renderBalances(price);
+
+      let investmentLog = "";
+      user.investments.forEach(inv => {
+        const investedDate = new Date(inv.timestamp).toLocaleString();
+        const status = inv.credited ? "✅ Profit Added" : "⏳ Awaiting 3 Days";
+        investmentLog += `<p>You invested ₿${inv.amount} on ${investedDate} — ${status}</p>`;
+      });
+      document.getElementById("investment-details").innerHTML = investmentLog;
+
+      let withdrawLog = "";
+      user.withdrawals.forEach(w => {
+        const daysPassed = (now - w.timestamp) / (1000 * 60 * 60 * 24);
+        const isComplete = daysPassed >= 3;
+        withdrawLog += `<p>₿${w.amount} to ${w.bank} - <strong>${isComplete ? "✅ Successful" : "⏳ Pending"}</strong></p>`;
+      });
+      document.getElementById("withdraw-log").innerHTML = withdrawLog;
+
+      await updateChart();
+      setInterval(updateChart, 60000); // auto-refresh chart every 60 seconds
+    })();
+  </script></body>
+</html>
